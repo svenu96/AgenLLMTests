@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # Main application
+  llm-platform:
+    build: .
+    ports:
+      - "8501:8501"  # Streamlit
+      - "8000:8000"  # FastAPI
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HUGGINGFACE_API_TOKEN=${HUGGINGFACE_API_TOKEN}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+    command: ["streamlit"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API service (alternative deployment)
+  llm-api:
+    build: .
+    ports:
+      - "8001:8000"
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HUGGINGFACE_API_TOKEN=${HUGGINGFACE_API_TOKEN}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+    command: ["api"]
+    restart: unless-stopped
+    profiles:
+      - api-only
+
+  # Vector database (optional)
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+    profiles:
+      - with-vector-db
+
+  # Jupyter Lab for development (optional)
+  jupyter:
+    build: .
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=llm-study-token
+    volumes:
+      - .:/app
+    command: ["bash", "-c", "jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/app"]
+    profiles:
+      - development
+
+networks:
+  default:
+    name: llm-platform-network
+
+volumes:
+  chroma_data:
+    driver: local
